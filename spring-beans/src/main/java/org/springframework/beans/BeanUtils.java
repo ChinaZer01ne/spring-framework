@@ -227,7 +227,6 @@ public abstract class BeanUtils {
 	 * @since 5.0
 	 * @see <a href="https://kotlinlang.org/docs/reference/classes.html#constructors">Kotlin docs</a>
 	 */
-	@SuppressWarnings("unchecked")
 	@Nullable
 	public static <T> Constructor<T> findPrimaryConstructor(Class<T> clazz) {
 		Assert.notNull(clazz, "Class must not be null");
@@ -442,8 +441,7 @@ public abstract class BeanUtils {
 	 * @throws BeansException if PropertyDescriptor look fails
 	 */
 	public static PropertyDescriptor[] getPropertyDescriptors(Class<?> clazz) throws BeansException {
-		CachedIntrospectionResults cr = CachedIntrospectionResults.forClass(clazz);
-		return cr.getPropertyDescriptors();
+		return CachedIntrospectionResults.forClass(clazz).getPropertyDescriptors();
 	}
 
 	/**
@@ -454,11 +452,8 @@ public abstract class BeanUtils {
 	 * @throws BeansException if PropertyDescriptor lookup fails
 	 */
 	@Nullable
-	public static PropertyDescriptor getPropertyDescriptor(Class<?> clazz, String propertyName)
-			throws BeansException {
-
-		CachedIntrospectionResults cr = CachedIntrospectionResults.forClass(clazz);
-		return cr.getPropertyDescriptor(propertyName);
+	public static PropertyDescriptor getPropertyDescriptor(Class<?> clazz, String propertyName) throws BeansException {
+		return CachedIntrospectionResults.forClass(clazz).getPropertyDescriptor(propertyName);
 	}
 
 	/**
@@ -511,6 +506,7 @@ public abstract class BeanUtils {
 		if (targetType == null || targetType.isArray() || unknownEditorTypes.contains(targetType)) {
 			return null;
 		}
+
 		ClassLoader cl = targetType.getClassLoader();
 		if (cl == null) {
 			try {
@@ -527,28 +523,34 @@ public abstract class BeanUtils {
 				return null;
 			}
 		}
+
 		String targetTypeName = targetType.getName();
 		String editorName = targetTypeName + "Editor";
 		try {
 			Class<?> editorClass = cl.loadClass(editorName);
-			if (!PropertyEditor.class.isAssignableFrom(editorClass)) {
-				if (logger.isInfoEnabled()) {
-					logger.info("Editor class [" + editorName +
-							"] does not implement [java.beans.PropertyEditor] interface");
+			if (editorClass != null) {
+				if (!PropertyEditor.class.isAssignableFrom(editorClass)) {
+					if (logger.isInfoEnabled()) {
+						logger.info("Editor class [" + editorName +
+								"] does not implement [java.beans.PropertyEditor] interface");
+					}
+					unknownEditorTypes.add(targetType);
+					return null;
 				}
-				unknownEditorTypes.add(targetType);
-				return null;
+				return (PropertyEditor) instantiateClass(editorClass);
 			}
-			return (PropertyEditor) instantiateClass(editorClass);
+			// Misbehaving ClassLoader returned null instead of ClassNotFoundException
+			// - fall back to unknown editor type registration below
 		}
 		catch (ClassNotFoundException ex) {
-			if (logger.isTraceEnabled()) {
-				logger.trace("No property editor [" + editorName + "] found for type " +
-						targetTypeName + " according to 'Editor' suffix convention");
-			}
-			unknownEditorTypes.add(targetType);
-			return null;
+			// Ignore - fall back to unknown editor type registration below
 		}
+		if (logger.isTraceEnabled()) {
+			logger.trace("No property editor [" + editorName + "] found for type " +
+					targetTypeName + " according to 'Editor' suffix convention");
+		}
+		unknownEditorTypes.add(targetType);
+		return null;
 	}
 
 	/**
